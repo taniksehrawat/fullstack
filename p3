@@ -1,0 +1,180 @@
+/**
+ * Real-Time Chat Application using Express, React, and Socket.io
+ * ---------------------------------------------------------------
+ * Single-file setup: backend (Express + Socket.io) + frontend (React via CDN)
+ * Run:  node server.js
+ * Then open: http://localhost:5000
+ */
+
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const path = require("path");
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.get("/", (req, res) => {
+  // Serve a React frontend from CDN for simplicity
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Chat App</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
+    #root { max-width: 600px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    h2 { text-align: center; }
+    .chat-box { height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fafafa; }
+    .msg { margin: 5px 0; padding: 6px 10px; border-radius: 8px; }
+    .me { background: #c7eaff; align-self: flex-end; }
+    .system { color: #666; font-style: italic; }
+    .input-row { display: flex; gap: 10px; }
+    input, button { padding: 10px; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc; }
+    button { cursor: pointer; background: #007bff; color: #fff; border: none; }
+    button:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/javascript">
+    const { useState, useEffect, useRef } = React;
+
+    function ChatApp() {
+      const [socket, setSocket] = useState(null);
+      const [joined, setJoined] = useState(false);
+      const [username, setUsername] = useState("");
+      const [msg, setMsg] = useState("");
+      const [messages, setMessages] = useState([]);
+      const [onlineUsers, setOnlineUsers] = useState(0);
+      const chatRef = useRef();
+
+      useEffect(() => {
+        const s = io();
+        setSocket(s);
+
+        s.on("chatMessage", (data) => {
+          setMessages((prev) => [...prev, { type: "chat", ...data }]);
+        });
+
+        s.on("systemMessage", (data) => {
+          setMessages((prev) => [...prev, { type: "system", text: data.text }]);
+        });
+
+        s.on("userJoined", (data) => {
+          setMessages((prev) => [...prev, { type: "system", text: data.username + " joined (" + data.onlineUsers + " online)" }]);
+          setOnlineUsers(data.onlineUsers);
+        });
+
+        s.on("userLeft", (data) => {
+          setMessages((prev) => [...prev, { type: "system", text: data.username + " left (" + data.onlineUsers + " online)" }]);
+          setOnlineUsers(data.onlineUsers);
+        });
+
+        return () => s.disconnect();
+      }, []);
+
+      useEffect(() => {
+        if (chatRef.current) {
+          chatRef.current.scrollTop = chatRef.current.scrollHeight;
+        }
+      }, [messages]);
+
+      const joinChat = () => {
+        if (username.trim()) {
+          socket.emit("join", username.trim());
+          setJoined(true);
+        }
+      };
+
+      const sendMsg = () => {
+        if (msg.trim()) {
+          socket.emit("chatMessage", msg);
+          setMsg("");
+        }
+      };
+
+      return (
+        React.createElement("div", null,
+          React.createElement("h2", null, "💬 Real-Time Chat"),
+          !joined
+            ? React.createElement("div", null,
+                React.createElement("input", {
+                  placeholder: "Enter your name",
+                  value: username,
+                  onChange: (e) => setUsername(e.target.value),
+                  style: { width: "70%", marginRight: "10px" }
+                }),
+                React.createElement("button", { onClick: joinChat }, "Join Chat")
+              )
+            : React.createElement("div", null,
+                React.createElement("p", null, "Online Users: ", onlineUsers),
+                React.createElement("div", { className: "chat-box", ref: chatRef },
+                  messages.map((m, i) =>
+                    React.createElement("div", {
+                      key: i,
+                      className: "msg " + (m.type === "system" ? "system" : (m.username === username ? "me" : ""))
+                    },
+                      m.type === "system"
+                        ? React.createElement("i", null, m.text)
+                        : React.createElement("b", null, m.username + ": ", React.createElement("span", null, " " + m.text))
+                    )
+                  )
+                ),
+                React.createElement("div", { className: "input-row" },
+                  React.createElement("input", {
+                    placeholder: "Type a message...",
+                    value: msg,
+                    onChange: (e) => setMsg(e.target.value),
+                    onKeyDown: (e) => e.key === "Enter" && sendMsg(),
+                    style: { flex: 1 }
+                  }),
+                  React.createElement("button", { onClick: sendMsg }, "Send")
+                )
+              )
+        )
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(React.createElement(ChatApp));
+  </script>
+</body>
+</html>
+  `);
+});
+
+// ---- Socket.io Events ----
+let onlineUsers = 0;
+
+io.on("connection", (socket) => {
+  console.log("New user connected:", socket.id);
+
+  socket.on("join", (username) => {
+    socket.username = username || "Guest";
+    onlineUsers++;
+    io.emit("userJoined", { username: socket.username, onlineUsers });
+  });
+
+  socket.on("chatMessage", (msg) => {
+    io.emit("chatMessage", { username: socket.username, text: msg });
+  });
+
+  socket.on("disconnect", () => {
+    if (socket.username) {
+      onlineUsers = Math.max(0, onlineUsers - 1);
+      io.emit("userLeft", { username: socket.username, onlineUsers });
+    }
+  });
+});
+
+const PORT = 5000;
+server.listen(PORT, () =>
+  console.log(`🚀 Chat server running on http://localhost:${PORT}`)
+);
