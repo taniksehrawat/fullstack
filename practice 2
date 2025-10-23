@@ -1,0 +1,72 @@
+// jwt-banking-api.js
+
+const express = require("express");
+const jwt = require("jsonwebtoken");
+
+const app = express();
+app.use(express.json());
+
+const SECRET_KEY = "myjwtsecretkey"; // normally use env variable
+
+// ===== Mock User Data =====
+const user = {
+  username: "tanik",
+  password: "12345",
+  balance: 1000,
+};
+
+// ===== Middleware: Verify JWT Token =====
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return res.status(401).json({ message: "Authorization header missing" });
+
+  const token = authHeader.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Token missing" });
+
+  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    if (err) return res.status(403).json({ message: "Invalid or expired token" });
+    req.user = decoded; // attach decoded user info to request
+    next();
+  });
+}
+
+// ===== Route: Login (Generate JWT) =====
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+
+  if (username === user.username && password === user.password) {
+    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: "1h" });
+    return res.json({ message: "Login successful", token });
+  }
+
+  res.status(401).json({ message: "Invalid credentials" });
+});
+
+// ===== Protected Route: Balance =====
+app.get("/balance", authenticateToken, (req, res) => {
+  res.json({ username: req.user.username, balance: user.balance });
+});
+
+// ===== Protected Route: Deposit =====
+app.post("/deposit", authenticateToken, (req, res) => {
+  const { amount } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
+
+  user.balance += amount;
+  res.json({ message: `Deposited ₹${amount} successfully`, newBalance: user.balance });
+});
+
+// ===== Protected Route: Withdraw =====
+app.post("/withdraw", authenticateToken, (req, res) => {
+  const { amount } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
+
+  if (user.balance < amount) return res.status(400).json({ message: "Insufficient balance" });
+
+  user.balance -= amount;
+  res.json({ message: `Withdrew ₹${amount} successfully`, newBalance: user.balance });
+});
+
+// ===== Start Server =====
+const PORT = 3000;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
