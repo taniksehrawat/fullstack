@@ -1,0 +1,120 @@
+🚀 Dockerize a React Application with Multi-Stage Build
+🎯 Objective
+
+Create a production-ready Docker image for a React app using a multi-stage build to:
+
+Reduce image size
+
+Separate build dependencies
+
+Prepare for deployment
+
+🧩 Project Structure
+react-docker-app/
+│
+├── Dockerfile
+├── .dockerignore
+├── package.json
+├── package-lock.json
+└── src/
+    └── App.js
+
+📘 Step 1: Create a Simple React App
+
+You can either use Create React App:
+
+npx create-react-app react-docker-app
+cd react-docker-app
+
+
+or use this minimal version inside src/App.js:
+
+import React from "react";
+
+function App() {
+  return (
+    <div style={{ textAlign: "center", marginTop: "50px" }}>
+      <h1>🚀 React App Dockerized with Multi-Stage Build</h1>
+      <p>Served by Nginx in a production-ready container.</p>
+    </div>
+  );
+}
+
+export default App;
+
+🐳 Step 2: Create Dockerfile
+
+Dockerfile
+
+# ---------- Stage 1: Build React App ----------
+FROM node:18-alpine AS build
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Build production React app
+RUN npm run build
+
+
+# ---------- Stage 2: Serve with Nginx ----------
+FROM nginx:alpine
+
+# Copy build output from previous stage
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+
+🚫 Step 3: Create .dockerignore
+
+.dockerignore
+
+node_modules
+build
+.dockerignore
+.git
+.gitignore
+Dockerfile
+README.md
+
+⚙️ Step 4: Build & Run
+
+Build the image:
+
+docker build -t react-docker-app .
+
+
+Run the container:
+
+docker run -p 80:80 react-docker-app
+
+
+Now open http://localhost
+ 🎉
+You’ll see your React app served from an optimized Nginx container.
+
+📊 Step 5: Verify Image Size Optimization
+
+Run:
+
+docker images
+
+
+Example output:
+
+REPOSITORY          TAG       SIZE
+react-docker-app    latest    25MB
+node                18-alpine 180MB
+
+
+✅ The final production image is much smaller — only the static files and Nginx are included.
