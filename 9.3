@@ -1,0 +1,91 @@
+name: Deploy Full Stack App on AWS with Load Balancing
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ap-south-1        # Change to your AWS region
+      FRONTEND_INSTANCE_IP: ${{ secrets.FRONTEND_INSTANCE_IP }}
+      BACKEND_INSTANCE_IP: ${{ secrets.BACKEND_INSTANCE_IP }}
+      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      USER: ubuntu                  # Default for Ubuntu EC2 AMIs
+
+    steps:
+      # Step 1: Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Node.js for building both frontend and backend
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Step 3: Build Frontend (React)
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      # Step 4: Build Backend (Express)
+      - name: Install Backend Dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      # Step 5: Deploy Frontend to EC2 (Nginx/Apache)
+      - name: Deploy Frontend to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.FRONTEND_INSTANCE_IP }}
+          username: ${{ env.USER }}
+          key: ${{ env.SSH_KEY }}
+          source: "./frontend/build/*"
+          target: "/var/www/html"
+
+      # Step 6: Deploy Backend to EC2
+      - name: Deploy Backend to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.BACKEND_INSTANCE_IP }}
+          username: ${{ env.USER }}
+          key: ${{ env.SSH_KEY }}
+          source: "./backend/*"
+          target: "~/app"
+
+      # Step 7: Restart Backend Server
+      - name: Restart Node Server
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ env.BACKEND_INSTANCE_IP }}
+          username: ${{ env.USER }}
+          key: ${{ env.SSH_KEY }}
+          script: |
+            cd ~/app
+            npm install --production
+            pm2 restart all || pm2 start server.js
+
+      # Step 8 (Optional): Register Instances with Load Balancer
+      - name: Register EC2 Instances with ALB
+        uses: aws-actions/aws-cli@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          args: >
+            elbv2 register-targets
+            --target-group-arn ${{ secrets.AWS_TARGET_GROUP_ARN }}
+            --targets Id=${{ secrets.BACKEND_INSTANCE_ID }}
+
+      # Step 9 (Optional): Verify Deployment
+      - name: Verify Deployment
+        run: |
+          echo "✅ Frontend deployed to http://${{ env.FRONTEND_INSTANCE_IP }}"
+          echo "✅ Backend deployed to http://${{ env.BACKEND_INSTANCE_IP }}"
+          echo "🌐 Load Balancer URL: ${{ secrets.ALB_DNS_NAME }}"
